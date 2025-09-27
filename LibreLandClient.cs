@@ -4,8 +4,12 @@ using UnityEngine;
 using System.Reflection;
 using System.Reflection.Emit;
 using BepInEx.Configuration;
+using System.Collections.Generic;
+using System.Linq;
+using System.IO;
 
-public static class PluginInfo {
+public static class PluginInfo
+{
     public const string GUID = "dev.librelandcommunity.client";
     public const string NAME = "Libreland-Client";
     public const string VERSION = "1.0.0";
@@ -50,7 +54,7 @@ public class LibrelandClient : BaseUnityPlugin
         punAppIDConfig = urls.Bind("URL", "PUNAppID", PhotonNetwork.PhotonServerSettings.AppID, "Replacement app ID for pun servers");
         punChatIDConfig = urls.Bind("URL", "PUNChatID", PhotonNetwork.PhotonServerSettings.ChatAppID, "Replacement chat ID for pun servers");
         punVoiceIDConfig = urls.Bind("URL", "PUNVoiceID", PhotonNetwork.PhotonServerSettings.VoiceAppID, "Replacement voice ID for pun servers");
-        
+
         usernameConfig = user.Bind("USER", "Username", System.Environment.MachineName, "");
         passwordConfig = user.Bind("USER", "Password", "REPLACEME", "");
 
@@ -59,10 +63,12 @@ public class LibrelandClient : BaseUnityPlugin
     }
 
     [HarmonyPatch(typeof(ServerManager))]
-    class ServerManagerPatch {
+    class ServerManagerPatch
+    {
         [HarmonyPatch(nameof(ServerManager.Startup))]
         [HarmonyPrefix]
-        static bool ChangeBaseUrl(ServerManager __instance, string ___serverBaseUrl){
+        static bool ChangeBaseUrl(ServerManager __instance, string ___serverBaseUrl)
+        {
             Debug.Log($"Changing RemoteServerBaseUrl to {urlConfig.Value}");
             __instance.RemoteServerBaseUrl = urlConfig.Value;
             return true;
@@ -70,7 +76,8 @@ public class LibrelandClient : BaseUnityPlugin
 
         [HarmonyPatch(nameof(ServerManager.Startup))]
         [HarmonyPostfix]
-        static void Check(ServerManager __instance, string ___serverBaseUrl){
+        static void Check(ServerManager __instance, string ___serverBaseUrl)
+        {
             Debug.Log($"Final RemoteServerBaseUrl value: {__instance.RemoteServerBaseUrl}");
             Debug.Log($"Final ServerBaseUrl value: {___serverBaseUrl}");
         }
@@ -123,9 +130,11 @@ public class LibrelandClient : BaseUnityPlugin
     }
 
     [HarmonyPatch(typeof(BroadcastNetworkManager), "OverridePhotonAppId")]
-    class BroadcastNetworkManagerPatch {
+    class BroadcastNetworkManagerPatch
+    {
         [HarmonyPostfix]
-        static void Postfix() {
+        static void Postfix()
+        {
             Debug.Log($"Changing PUN AppID to {punAppIDConfig.Value}");
             PhotonNetwork.PhotonServerSettings.AppID = punAppIDConfig.Value;
             Debug.Log($"Changing PUN ChatID to {punChatIDConfig.Value}");
@@ -136,9 +145,11 @@ public class LibrelandClient : BaseUnityPlugin
     }
 
     [HarmonyPatch(typeof(SteamManager), nameof(SteamManager.GetAuthSessionTicket))]
-    class SteamManagerPatch {
+    class SteamManagerPatch
+    {
         [HarmonyTranspiler]
-        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
             Debug.Log("Chaning return method of GetAuthSessionTicket");
             var instructionsList = new List<CodeInstruction>();
             instructionsList.Add(new CodeInstruction(OpCodes.Ldstr, $"{usernameConfig.Value}|{passwordConfig.Value}"));
@@ -149,7 +160,8 @@ public class LibrelandClient : BaseUnityPlugin
 
     // This is the ugc stuff I don't quite know how it works but this should all theoretically work
     [HarmonyPatch(typeof(ThingPart), nameof(ThingPart.GetFullImageUrl))]
-    class ThingPartPatch {
+    class ThingPartPatch
+    {
         [HarmonyPostfix]
         public static void Postfix(ref string __result)
         {
@@ -161,7 +173,8 @@ public class LibrelandClient : BaseUnityPlugin
     }
 
     [HarmonyPatch(typeof(TextLink))]
-    class TextLinkPatch {
+    class TextLinkPatch
+    {
         [HarmonyPatch(nameof(TextLink.GetFullUrl))]
         [HarmonyPostfix]
         static void Postfix(ref string __result)
@@ -175,78 +188,82 @@ public class LibrelandClient : BaseUnityPlugin
         [HarmonyPatch(nameof(TextLink.TryParseURL))]
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-        {          
+        {
             var instructionsList = instructions.ToList();
-            
+
             for (int i = 0; i < instructionsList.Count; i++)
             {
                 var instruction = instructionsList[i];
-                
+
                 if (instruction.opcode.Equals(OpCodes.Ldstr) && instruction.operand is string str && str.Equals("steamuserimages-a.akamaihd.net/"))
                 {
                     instructionsList[i] = new CodeInstruction(OpCodes.Ldstr, steamScreenshotPrefixHTTPConfig.Value.Replace("http://", ""));
                 }
             }
-            
+
             return instructionsList;
         }
     }
 
     [HarmonyPatch(typeof(ReferenceImageQuad), "Update")]
-    class ReferenceImageQuadPatch {
+    class ReferenceImageQuadPatch
+    {
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-        {          
+        {
             var instructionsList = instructions.ToList();
-            
+
             for (int i = 0; i < instructionsList.Count; i++)
             {
                 var instruction = instructionsList[i];
-                
+
                 if (instruction.opcode.Equals(OpCodes.Ldstr) && instruction.operand is string str && str.Equals("https://steamuserimages-a.akamaihd.net/ugc/"))
                 {
                     instructionsList[i] = new CodeInstruction(OpCodes.Ldstr, steamScreenshotPrefixHTTPSConfig.Value);
                 }
             }
-            
+
             return instructionsList;
         }
     }
 
     [HarmonyPatch(typeof(ThingPartCopyPasteDialog), "PasteImageIfValidates")]
-    class ThingPartCopyPasteDialogPatch {
+    class ThingPartCopyPasteDialogPatch
+    {
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-        {          
+        {
             var instructionsList = instructions.ToList();
-            
+
             for (int i = 0; i < instructionsList.Count; i++)
             {
                 var instruction = instructionsList[i];
-                
+
                 if (instruction.opcode.Equals(OpCodes.Ldstr) && instruction.operand is string str && str.Equals("https://steamuserimages-a.akamaihd.net/ugc/"))
                 {
                     instructionsList[i] = new CodeInstruction(OpCodes.Ldstr, steamScreenshotPrefixHTTPSConfig.Value);
                 }
             }
-            
+
             return instructionsList;
         }
     }
 
     [HarmonyPatch(typeof(Dialog), "ShowDesktopHelp")]
-    class DialogPatch {
+    class DialogPatch
+    {
         [HarmonyTranspiler]
         public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
             var instructionsList = instructions.ToList();
-             for (int i = 0; i < instructionsList.Count; i++)
+            for (int i = 0; i < instructionsList.Count; i++)
             {
                 var instruction = instructionsList[i];
-                
+
                 if (instruction.opcode.Equals(OpCodes.Ldstr) && instruction.operand is string str)
                 {
-                    if (str.Equals("and explore via PC + keyboard")) {
+                    if (str.Equals("and explore via PC + keyboard"))
+                    {
                         instructionsList[i] = new CodeInstruction(OpCodes.Ldstr, "and explore via PC + keyboard \nArchive by Zetaphor, LeCloutPanda \nand the Anyland community for sharing \ntheir cache with Libreland.");
                     }
                 }
@@ -257,10 +274,101 @@ public class LibrelandClient : BaseUnityPlugin
     }
 
     [HarmonyPatch(typeof(VideoDialog), "Start")]
-    class VideoDialogPatch {
+    class VideoDialogPatch
+    {
         [HarmonyPostfix]
-        static void RemoveVideoPanelBecauseItsBroken(VideoDialog __instance) {
+        static void RemoveVideoPanelBecauseItsBroken(VideoDialog __instance)
+        {
             __instance.transform.GetChild(0).GetChild(1).gameObject.SetActive(false);
+        }
+    }
+
+
+    [HarmonyPatch(typeof(MainDialog), "ShowPhotonDownInfo")]
+    class DialogManagerErrorPatch
+    {
+        [HarmonyTranspiler]
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var newMessage = "This client is running on your local server. You can continue exploring and creating forever.";
+            var originalMessageFragment = "Some servers seem to be down";
+            var instructionsList = new List<CodeInstruction>(instructions);
+
+            for (int i = 0; i < instructionsList.Count; i++)
+            {
+                var instruction = instructionsList[i];
+
+                // We are looking for the instruction that loads a string (Ldstr)
+                // and checking if that string is the one we want to replace.
+                if (instruction.opcode == OpCodes.Ldstr && instruction.operand is string str && str.Contains(originalMessageFragment))
+                {
+                    instruction.operand = newMessage;
+                    break;
+                }
+            }
+
+            return instructionsList.AsEnumerable();
+        }
+    }
+    [HarmonyPatch(typeof(MainDialog), "AddPhotonDownInfo")]
+    class MainDialogAddPhotonDownInfoPatch
+    {
+        [HarmonyTranspiler]
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+
+            /*
+                Default = 0
+                Black = 1
+                Gray = 2
+                LightGray = 3
+                Green = 4
+                Red = 5
+                Gold = 6
+                Blue = 7
+                White = 8
+            */
+
+            const int textColorRedValue = 5;
+            const int textColorGreenValue = 4;
+
+            var instructionsList = instructions.ToList();
+            bool textPatched = false;
+            bool colorPatched = false;
+
+            for (int i = 0; i < instructionsList.Count; i++)
+            {
+                // --- 1. Patch Button Text ---
+                // Find the string "Outage" and replace it with "Local".
+                if (!textPatched && instructionsList[i].opcode == OpCodes.Ldstr && instructionsList[i].operand is string str && str == "Outage")
+                {
+                    instructionsList[i].operand = "Local";
+                    textPatched = true;
+                }
+
+                // --- 2. Patch Button Color ---
+                // Find the instruction that loads the integer constant for Red (5).
+                if (!colorPatched && instructionsList[i].LoadsConstant(textColorRedValue))
+                {
+                    // To be certain we are changing the right value, we can confirm this integer is
+                    // being loaded near the other parameters for the AddButton method. A simple
+                    // way is to check if we've already patched the button text.
+                    if (textPatched)
+                    {
+                        // Replace the instruction to load the value for Green (4) instead.
+                        instructionsList[i] = new CodeInstruction(OpCodes.Ldc_I4, textColorGreenValue);
+                        colorPatched = true;
+                    }
+                }
+
+                // If both patches are done, we can stop searching.
+                if (textPatched && colorPatched)
+                {
+                    break;
+                }
+            }
+
+            return instructionsList.AsEnumerable();
         }
     }
 }
